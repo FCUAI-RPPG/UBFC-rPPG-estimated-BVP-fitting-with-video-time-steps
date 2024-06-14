@@ -1,1 +1,1 @@
-We fix UBFC-rPPG label
+We fix UBFC-rPPG label for 42 subject videos
