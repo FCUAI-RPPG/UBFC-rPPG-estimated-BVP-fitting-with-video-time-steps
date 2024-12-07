@@ -174,9 +174,12 @@ class TA2N(nn.Module):
 
     def forward(self, inputs, params=None):
         if self.channel == 'raw':
-            inputs = torch.diff(inputs, dim=0)
-            inputs = torch.cat([inputs,inputs[-1].reshape(1,self.in_channels,self.img_size,self.img_size)], dim=0)
-            inputs = self.batch_norm(inputs)   
+            inputs = inputs.reshape(-1,self.frame_depth,self.in_channels,self.img_size,self.img_size)
+            inputs = torch.diff(inputs, dim=1)
+            last_value = inputs[:, -1:] # 形狀為 [N, 1, c, H, W]
+            inputs = torch.cat((inputs, last_value), dim=1)  # 維度變回 [N, frame_len, c, H, W]
+            inputs = inputs.reshape(-1,self.in_channels,self.img_size,self.img_size) #[nt, C, H, W]
+            inputs = self.batch_norm(inputs)    
         
         #attention block1           
         inputs = self.TSM_1(inputs)
