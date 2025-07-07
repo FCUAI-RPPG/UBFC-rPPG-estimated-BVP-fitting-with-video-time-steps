@@ -122,6 +122,7 @@ class TA2N(nn.Module):
         self.pool_size = pool_size
         self.nb_filters1 = nb_filters1
         self.nb_filters2 = nb_filters2
+        self.frame_depth = frame_depth
         self.nb_dense = nb_dense
         self.img_size = img_size
         # TSM layers
@@ -165,21 +166,28 @@ class TA2N(nn.Module):
         self.batch_norm = nn.BatchNorm2d(in_channels)       #default 3
         self.channel = channel
         self.channelAttention1 = ChannelAttention(self.nb_filters1)      #inplace = self.nb_filters1
-        self.channelAttention2 = ChannelAttention(self.nb_filters2)
-        self.spatialAttention = SpatialAttention()
+        self.channelAttention2 = ChannelAttention(self.nb_filters1)
+        self.channelAttention3 = ChannelAttention(self.nb_filters2)
+        self.channelAttention4 = ChannelAttention(self.nb_filters2)
+        self.spatialAttention1 = SpatialAttention()
+        self.spatialAttention2 = SpatialAttention()
+        self.spatialAttention3 = SpatialAttention()
+        self.spatialAttention4 = SpatialAttention()
         self.residual_cnn1 = nn.Conv2d(self.nb_filters1, self.nb_filters1, kernel_size=self.kernel_size, bias=True,padding=(1, 1))
         self.residual_cnn2 = nn.Conv2d(self.nb_filters1, self.nb_filters1, kernel_size=self.kernel_size, bias=True,padding=(1, 1))
         self.residual_cnn3 = nn.Conv2d(self.nb_filters2, self.nb_filters2, kernel_size=self.kernel_size, bias=True,padding=(1, 1))
         self.residual_cnn4 = nn.Conv2d(self.nb_filters2, self.nb_filters2, kernel_size=self.kernel_size, bias=True,padding=(1, 1))
 
     def forward(self, inputs, params=None):
-        if self.channel == 'raw':
-            inputs = inputs.reshape(-1,self.frame_depth,self.in_channels,self.img_size,self.img_size)
-            inputs = torch.diff(inputs, dim=1)
-            last_value = inputs[:, -1:] # 形狀為 [N, 1, c, H, W]
-            inputs = torch.cat((inputs, last_value), dim=1)  # 維度變回 [N, frame_len, c, H, W]
-            inputs = inputs.reshape(-1,self.in_channels,self.img_size,self.img_size) #[nt, C, H, W]
-            inputs = self.batch_norm(inputs)    
+        inputs = inputs.reshape(-1,self.frame_depth,self.in_channels,self.img_size,self.img_size)
+        inputs = torch.diff(inputs, dim=1)
+        last_value = inputs[:, -1:] # 形狀為 [N, 1, c, H, W]
+        inputs = torch.cat((inputs, last_value), dim=1)  # 維度變回 [N, frame_len, c, H, W]
+        inputs = inputs.reshape(-1,self.in_channels,self.img_size,self.img_size) #[nt, C, H, W]
+        inputs = self.batch_norm(inputs)   
+        # inputs = torch.diff(inputs, dim=0)
+        # inputs = torch.cat([inputs,inputs[-1].reshape(1,self.in_channels,self.img_size,self.img_size)], dim=0)
+        # inputs = self.batch_norm(inputs)   
         
         #attention block1           
         inputs = self.TSM_1(inputs)
@@ -189,7 +197,7 @@ class TA2N(nn.Module):
         short_cut = inputs
         inputs = self.residual_cnn1(inputs)
         inputs = self.channelAttention1(inputs)*inputs
-        inputs = self.spatialAttention(inputs)*inputs
+        inputs = self.spatialAttention1(inputs)*inputs
         inputs = inputs+short_cut
 
         #attention block2
@@ -198,9 +206,9 @@ class TA2N(nn.Module):
         inputs = torch.tanh(inputs)
 
         short_cut = inputs
-        inputs = self.residual_cnn1(inputs)
-        inputs = self.channelAttention1(inputs)*inputs
-        inputs = self.spatialAttention(inputs)*inputs
+        inputs = self.residual_cnn2(inputs)
+        inputs = self.channelAttention2(inputs)*inputs
+        inputs = self.spatialAttention2(inputs)*inputs
         inputs = inputs+short_cut
         
         #apperance_attention
@@ -218,8 +226,8 @@ class TA2N(nn.Module):
         
         short_cut = inputs
         inputs = self.residual_cnn3(inputs)
-        inputs = self.channelAttention2(inputs)*inputs
-        inputs = self.spatialAttention(inputs)*inputs
+        inputs = self.channelAttention3(inputs)*inputs
+        inputs = self.spatialAttention3(inputs)*inputs
         inputs = inputs+short_cut
 
         #attention block4
@@ -229,8 +237,8 @@ class TA2N(nn.Module):
         
         short_cut = inputs
         inputs = self.residual_cnn4(inputs)
-        inputs = self.channelAttention2(inputs)*inputs
-        inputs = self.spatialAttention(inputs)*inputs
+        inputs = self.channelAttention4(inputs)*inputs
+        inputs = self.spatialAttention4(inputs)*inputs
         inputs = inputs+short_cut
 
         g = torch.sigmoid(self.apperance_att_conv2(inputs))
@@ -240,7 +248,7 @@ class TA2N(nn.Module):
 
         inputs = self.avg_pooling_3(inputs)
         inputs = self.dropout_3(inputs)
-        inputs = inputs.view(inputs.size(0), -1)
+        inputs = inputs.flatten(start_dim=1)
         inputs = torch.tanh(self.final_dense_1(inputs))
         inputs = self.dropout_4(inputs)
         inputs = self.final_dense_2(inputs)
